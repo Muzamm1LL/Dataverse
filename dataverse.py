@@ -237,7 +237,7 @@ def fetch_business_units_and_related_data():
                 print(f"Total rows retrieved for business unit '{business_unit_name}': {len(related_data)}")
 
             for row in related_data:
-                for i in range(1, 3):  # Loop through gambar1_blob to gambar2_blob
+                for i in range(1, 6):  # Loop through gambar1_blob to gambar5_blob
                     blob_attribute = f"crd8d_gambar{i}_blob"
                     if blob_attribute in row and row[blob_attribute]:
                         image_url = f"{base_url}{row[blob_attribute]}"
