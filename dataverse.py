@@ -4,11 +4,8 @@ import json
 from dotenv import load_dotenv
 import os
 import urllib.parse
-from datetime import datetime
 import msal
-from azure.storage.blob import BlobServiceClient
 import base64
-from io import BytesIO
 
 # Load credentials from .env file
 load_dotenv()
@@ -21,7 +18,7 @@ DATAVERSE_URL = os.getenv("DATAVERSE_URL")
 RESOURCE_URL = os.getenv("RESOURCE_URL")
 AUTHORITY_URL = os.getenv("AUTHORITY_URL")
 
-#get access token for dataverse
+# Get access token for Dataverse
 def get_access_token():
     """Authenticate with Azure AD and get an access token for Dataverse."""
     dataverse_scope = [f"{RESOURCE_URL}/.default"]
@@ -88,13 +85,17 @@ def fetch_business_units_and_related_data():
     # Base URL for Azure Blob Storage
     base_url = "https://tnbsl.blob.core.windows.net/qr2image/"
 
+    # Get user input for business unit name, year, and month
+    business_unit_name_input = input("Enter the business unit name: ").upper()  # Auto-capitalize
+    year_input = input("Enter the year (e.g., 2024): ")
+    month_input = input("Enter the month (e.g., 01 for January): ")
+
     # FetchXML query to retrieve business unit data
     fetchxml_query_business_units = """
     <fetch top="5000">
       <entity name="businessunit">
         <attribute name="name" />
         <attribute name="businessunitid" />
-        <order attribute="name" descending="false" />
         <attribute name="crd8d_admin" />
         <attribute name="crd8d_chargeman" />
         <attribute name="crd8d_chargemanno" />
@@ -134,21 +135,38 @@ def fetch_business_units_and_related_data():
         processed_units = load_checkpoint()
 
         # Process each business unit
+        matching_business_units = []
         for business_unit in business_units:
             business_unit_id = business_unit.get("businessunitid", "unknown_id")
             business_unit_name = business_unit.get("name", "Unknown")
 
+            # Check if the business unit name contains the user input
+            if business_unit_name_input in business_unit_name:
+                matching_business_units.append(business_unit)
+                print(f"Found matching business unit: {business_unit_name}")
+
+        if not matching_business_units:
+            print(f"No matching business unit found for input: {business_unit_name_input}")
+            return
+
+        # Process each matching business unit
+        for business_unit in matching_business_units:
+            business_unit_id = business_unit.get("businessunitid", "unknown_id")
+            business_unit_name = business_unit.get("name", "Unknown")
+
             # Skip if the business unit has already been processed
-            # Check if the business unit is already in the checkpoint
             if any(unit["business_unit_id"] == business_unit_id for unit in processed_units):
                 print(f"Skipping already processed business unit: {business_unit_name}")
                 continue
 
+            print(f"Processing business unit: {business_unit_name}")
+
             # FetchXML query for crd8d_qr2 table
             fetchxml_query_crd8d_qr2 = f"""
             <fetch top="5000">
-              <entity name="crd8d_qr2">
+             <entity name="crd8d_qr2">
                 <attribute name="owningbusinessunit" />
+                <order attribute="name" descending="false" />
                 <attribute name="crd8d_audit" />
                 <attribute name="crd8d_carakawalan" />
                 <attribute name="crd8d_catatan" />
@@ -191,10 +209,11 @@ def fetch_business_units_and_related_data():
                 <attribute name="crd8d_gambar3_blob" />
                 <attribute name="crd8d_gambar4_blob" />
                 <attribute name="crd8d_gambar5_blob" />
+
                 <filter type="and">
                   <condition attribute="owningbusinessunit" operator="eq" value="{business_unit_id}" />
-                  <condition attribute="crd8d_tarikh" operator="on-or-after" value="2024-01-01" />
-                  <condition attribute="crd8d_tarikh" operator="on-or-before" value="2024-01-31" />
+                  <condition attribute="crd8d_tarikh" operator="on-or-after" value="{year_input}-{month_input}-01" />
+                  <condition attribute="crd8d_tarikh" operator="on-or-before" value="{year_input}-{month_input}-31" />
                 </filter>
               </entity>
             </fetch>
@@ -218,7 +237,7 @@ def fetch_business_units_and_related_data():
                 print(f"Total rows retrieved for business unit '{business_unit_name}': {len(related_data)}")
 
             for row in related_data:
-                for i in range(1, 6):  # Loop through gambar1_blob to gambar5_blob
+                for i in range(1, 3):  # Loop through gambar1_blob to gambar2_blob
                     blob_attribute = f"crd8d_gambar{i}_blob"
                     if blob_attribute in row and row[blob_attribute]:
                         image_url = f"{base_url}{row[blob_attribute]}"
@@ -228,8 +247,7 @@ def fetch_business_units_and_related_data():
                             row[f"gambar{i}_base64"] = base64_image
                         else:
                             print(f"Failed to process image: {image_url}")
-            
-            
+
             # Define the mapping of old keys to new variable names
             key_mapping = {
                 "crd8d_audit": "audit",
@@ -296,11 +314,9 @@ def fetch_business_units_and_related_data():
                 """Combine business unit data with related data, remap keys, and save into JSON files."""
                 business_unit_name = business_unit.get("name", "Unknown")
                 business_unit_id = business_unit.get("businessunitid", "unknown_id")
-
+                
                 #retrieve negeri for each kkb 
                 business_unit_negeri = business_unit.get("zon.crd8d_negeri@OData.Community.Display.V1.FormattedValue", "Unknown")
-
-
                 # Initialize total rows processed
                 total_rows_processed = 0
 
@@ -309,8 +325,7 @@ def fetch_business_units_and_related_data():
                     print(f"No data retrieved for business unit '{business_unit_name}'. No file will be saved.")
                 else:
                     combined_data = []
-                    file_name = f"{business_unit_name}_{business_unit_negeri}_JAN_2024.json"
-
+                    file_name = f"{business_unit_name}_{business_unit_negeri}_{year_input}_{month_input}.json"
                     for index, row in enumerate(related_data):
                         try:
                             # Combine business unit data with related data
@@ -373,8 +388,8 @@ def fetch_business_units_and_related_data():
                     print(f"Saved combined data for business unit '{business_unit_name}' and updated checkpoint.")
                 else:
                     print(f"No data processed for business unit '{business_unit_name}', but checkpoint updated.")
-            # Inside fetch_business_units_and_related_data
-            # After fetching related_data for a business unit
+
+            # Call the remap_and_save_data function
             remap_and_save_data(related_data, business_unit, key_mapping)
 
     except requests.exceptions.RequestException as e:
