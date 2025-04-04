@@ -21,7 +21,6 @@ DATAVERSE_URL = os.getenv("DATAVERSE_URL")
 RESOURCE_URL = os.getenv("RESOURCE_URL")
 AUTHORITY_URL = os.getenv("AUTHORITY_URL")
 
-
 #get access token for dataverse
 def get_access_token():
     """Authenticate with Azure AD and get an access token for Dataverse."""
@@ -95,6 +94,7 @@ def fetch_business_units_and_related_data():
       <entity name="businessunit">
         <attribute name="name" />
         <attribute name="businessunitid" />
+        <order attribute="name" descending="false" />
         <attribute name="crd8d_admin" />
         <attribute name="crd8d_chargeman" />
         <attribute name="crd8d_chargemanno" />
@@ -297,6 +297,10 @@ def fetch_business_units_and_related_data():
                 business_unit_name = business_unit.get("name", "Unknown")
                 business_unit_id = business_unit.get("businessunitid", "unknown_id")
 
+                #retrieve negeri for each kkb 
+                business_unit_negeri = business_unit.get("zon.crd8d_negeri@OData.Community.Display.V1.FormattedValue", "Unknown")
+
+
                 # Initialize total rows processed
                 total_rows_processed = 0
 
@@ -305,7 +309,7 @@ def fetch_business_units_and_related_data():
                     print(f"No data retrieved for business unit '{business_unit_name}'. No file will be saved.")
                 else:
                     combined_data = []
-                    file_name = f"{business_unit_name}_JAN_2024.json"
+                    file_name = f"{business_unit_name}_{business_unit_negeri}_JAN_2024.json"
 
                     for index, row in enumerate(related_data):
                         try:
