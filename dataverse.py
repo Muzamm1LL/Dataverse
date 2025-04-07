@@ -29,7 +29,7 @@ def get_access_token():
         client_credential=CLIENT_SECRET
     )
     try:
-        # Acquire token for client
+        # Acquire token for dataverse access
         result = app.acquire_token_for_client(scopes=dataverse_scope)
 
         if "access_token" in result:
@@ -48,7 +48,7 @@ def download_and_convert_to_base64(image_url):
         print(f"Attempting to download image from: {image_url}")  # Log the URL
         response = requests.get(image_url)
         response.raise_for_status()
-        # Convert image content to Base64
+        # Convert image to Base64
         base64_image = base64.b64encode(response.content).decode("utf-8")
         print(f"Successfully downloaded and converted image: {image_url}")
         return base64_image
@@ -56,19 +56,6 @@ def download_and_convert_to_base64(image_url):
         print(f"Error downloading image from {image_url}: {e}")
         return None
 
-CHECKPOINT_FILE = "processed_business_units.json"
-
-def load_checkpoint():
-    """Load the list of processed business units from the checkpoint file."""
-    if os.path.exists(CHECKPOINT_FILE):
-        with open(CHECKPOINT_FILE, "r", encoding="utf-8") as file:
-            return json.load(file)
-    return []
-
-def save_checkpoint(processed_units):
-    """Save the list of processed business units to the checkpoint file."""
-    with open(CHECKPOINT_FILE, "w", encoding="utf-8") as file:
-        json.dump(processed_units, file, indent=4)
 
 def fetch_business_units_and_related_data():
     """Fetch business units and related data from the crd8d_qr2 table, including blob images."""
@@ -112,6 +99,21 @@ def fetch_business_units_and_related_data():
     else:
         print(f"Invalid month input: {month_input}. Please enter a valid month.")
         exit(1)
+
+    # the checkpoint file name
+    CHECKPOINT_FILE = f"processed_business_units_{month_name}_{year_input}.json"
+
+    def load_checkpoint():
+        """Load the list of processed business units from the checkpoint file."""
+        if os.path.exists(CHECKPOINT_FILE):
+            with open(CHECKPOINT_FILE, "r", encoding="utf-8") as file:
+                return json.load(file)
+        return []
+
+    def save_checkpoint(processed_units):
+        """Save the list of processed business units to the checkpoint file."""
+        with open(CHECKPOINT_FILE, "w", encoding="utf-8") as file:
+            json.dump(processed_units, file, indent=4)
 
 
     # Split the input into a list of business unit names
@@ -188,9 +190,9 @@ def fetch_business_units_and_related_data():
 
             print(f"Processing business unit: {business_unit_name}")
 
-            # FetchXML query for crd8d_qr2 table
+            # FetchXML query for qr2 table
             fetchxml_query_crd8d_qr2 = f"""
-            <fetch top="5000">
+            <fetch top="5">
              <entity name="crd8d_qr2">
                 <attribute name="owningbusinessunit" />
                 <attribute name="crd8d_audit" />
@@ -351,7 +353,7 @@ def fetch_business_units_and_related_data():
                     print(f"No data retrieved for business unit '{business_unit_name}'. No file will be saved.")
                 else:
                     combined_data = []
-                    file_name = f"{business_unit_name}_{business_unit_negeri}_{year_input}_{month_name}.json"  # Use month name here
+                    file_name = f"{business_unit_name}_{business_unit_negeri}_{month_name}_{year_input}.json"  # Use month name here
                     for index, row in enumerate(related_data):
                         try:
                             # Combine business unit data with related data
@@ -395,7 +397,7 @@ def fetch_business_units_and_related_data():
                 # Update the checkpoint
                 processed_units = load_checkpoint()  # Load the current checkpoint
                 if not any(unit["business_unit_id"] == business_unit_id for unit in processed_units):
-                    # Append both the business unit ID, name, and total rows processed
+                    # add kkb ID, name, and total rows processed
                     processed_units.append({
                         "business_unit_id": business_unit_id,
                         "business_unit_name": business_unit_name,
