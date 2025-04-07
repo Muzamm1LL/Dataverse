@@ -18,6 +18,7 @@ DATAVERSE_URL = os.getenv("DATAVERSE_URL")
 RESOURCE_URL = os.getenv("RESOURCE_URL")
 AUTHORITY_URL = os.getenv("AUTHORITY_URL")
 
+
 # Get access token for Dataverse
 def get_access_token():
     """Authenticate with Azure AD and get an access token for Dataverse."""
@@ -41,10 +42,10 @@ def get_access_token():
     except Exception as e:
         print(f"Dataverse: Error during authentication: {e}")
 
-
 def download_and_convert_to_base64(image_url):
     """Download an image from the given URL and convert it to a Base64 string."""
     try:
+        print(f"Attempting to download image from: {image_url}")  # Log the URL
         response = requests.get(image_url)
         response.raise_for_status()
         # Convert image content to Base64
@@ -54,7 +55,6 @@ def download_and_convert_to_base64(image_url):
     except requests.exceptions.RequestException as e:
         print(f"Error downloading image from {image_url}: {e}")
         return None
-
 
 CHECKPOINT_FILE = "processed_business_units.json"
 
@@ -70,7 +70,6 @@ def save_checkpoint(processed_units):
     with open(CHECKPOINT_FILE, "w", encoding="utf-8") as file:
         json.dump(processed_units, file, indent=4)
 
-
 def fetch_business_units_and_related_data():
     """Fetch business units and related data from the crd8d_qr2 table, including blob images."""
     access_token = get_access_token()
@@ -85,10 +84,13 @@ def fetch_business_units_and_related_data():
     # Base URL for Azure Blob Storage
     base_url = "https://tnbsl.blob.core.windows.net/qr2image/"
 
-    # Get user input for business unit name, year, and month
-    business_unit_name_input = input("Enter the business unit name: ").upper()  # Auto-capitalize
+    # Get user input for business unit names, year, and month
+    business_unit_names_input = input("Enter the business unit names (comma-separated): ").upper()  # Auto-capitalize
     year_input = input("Enter the year (e.g., 2024): ")
     month_input = input("Enter the month (e.g., 01 for January): ")
+
+    # Split the input into a list of business unit names
+    business_unit_names = [name.strip() for name in business_unit_names_input.split(",")]
 
     # FetchXML query to retrieve business unit data
     fetchxml_query_business_units = """
@@ -140,13 +142,13 @@ def fetch_business_units_and_related_data():
             business_unit_id = business_unit.get("businessunitid", "unknown_id")
             business_unit_name = business_unit.get("name", "Unknown")
 
-            # Check if the business unit name contains the user input
-            if business_unit_name_input in business_unit_name:
+            # Check if the business unit name contains any of the user input names
+            if any(name in business_unit_name for name in business_unit_names):
                 matching_business_units.append(business_unit)
                 print(f"Found matching business unit: {business_unit_name}")
 
         if not matching_business_units:
-            print(f"No matching business unit found for input: {business_unit_name_input}")
+            print(f"No matching business unit found for input: {business_unit_names_input}")
             return
 
         # Process each matching business unit
@@ -166,7 +168,6 @@ def fetch_business_units_and_related_data():
             <fetch top="5000">
              <entity name="crd8d_qr2">
                 <attribute name="owningbusinessunit" />
-                <order attribute="name" descending="false" />
                 <attribute name="crd8d_audit" />
                 <attribute name="crd8d_carakawalan" />
                 <attribute name="crd8d_catatan" />
@@ -315,7 +316,7 @@ def fetch_business_units_and_related_data():
                 business_unit_name = business_unit.get("name", "Unknown")
                 business_unit_id = business_unit.get("businessunitid", "unknown_id")
                 
-                #retrieve negeri for each kkb 
+                # Retrieve negeri for each kkb 
                 business_unit_negeri = business_unit.get("zon.crd8d_negeri@OData.Community.Display.V1.FormattedValue", "Unknown")
                 # Initialize total rows processed
                 total_rows_processed = 0
