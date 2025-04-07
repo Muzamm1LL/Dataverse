@@ -86,18 +86,18 @@ def fetch_business_units_and_related_data():
 
     # Month mapping
     month_mapping = {
-        "01": "January", "JANUARY": "01", "JAN": "01",
-        "02": "February", "FEBRUARY": "02", "FEB": "02",
-        "03": "March", "MARCH": "03", "MAR": "03",
-        "04": "April", "APRIL": "04", "APR": "04",
-        "05": "May", "MAY": "05",
-        "06": "June", "JUNE": "06", "JUN": "06",
-        "07": "July", "JULY": "07", "JUL": "07",
-        "08": "August", "AUGUST": "08", "AUG": "08",
-        "09": "September", "SEPTEMBER": "09", "SEP": "09",
-        "10": "October", "OCTOBER": "10", "OCT": "10",
-        "11": "November", "NOVEMBER": "11", "NOV": "11",
-        "12": "December", "DECEMBER": "12", "DEC": "12"
+        "01": "JAN", "JANUARY": "JAN", "JAN": "JAN",
+        "02": "FEB", "FEBRUARY": "FEB", "FEB": "FEB",
+        "03": "MAR", "MARCH": "MAR", "MAR": "MAR",
+        "04": "APR", "APRIL": "APR", "APR": "APR",
+        "05": "MAY", "MAY": "MAY",
+        "06": "JUN", "JUNE": "JUN", "JUN": "JUN",
+        "07": "JUL", "JULY": "JUL", "JUL": "JUL",
+        "08": "AUG", "AUGUST": "AUG", "AUG": "AUG",
+        "09": "SEP", "SEPTEMBER": "SEP", "SEP": "SEP",
+        "10": "OCT", "OCTOBER": "OCT", "OCT": "OCT",
+        "11": "NOV", "NOVEMBER": "NOV", "NOV": "NOV",
+        "12": "DEC", "DECEMBER": "DEC", "DEC": "DEC"
     }
 
     # Get user input for business unit names, year, and month
@@ -105,12 +105,14 @@ def fetch_business_units_and_related_data():
     year_input = input("Enter the year (e.g., 2024): ")
     month_input = input("Enter the month (e.g., March/Mar/03): ").strip().upper()
 
-    # Convert month name to numeric format
     if month_input in month_mapping:
-        month_numeric = month_mapping[month_input]  # Keep numeric for processing
+        month_numeric = [key for key, value in month_mapping.items() if value == month_mapping[month_input]][0]  # Get numeric format
+        month_name = month_mapping[month_input]  # Get three-letter abbreviation
+        print(f"Month numeric: {month_numeric}, Month name: {month_name}")
     else:
-        print(f"Invalid month input: {month_input}. Please enter a valid month name.")
-        exit(1)  # Exit if the month is invalid
+        print(f"Invalid month input: {month_input}. Please enter a valid month.")
+        exit(1)
+
 
     # Split the input into a list of business unit names
     business_unit_names = [name.strip() for name in business_unit_names_input.split(",")]
@@ -414,7 +416,7 @@ def fetch_business_units_and_related_data():
                     print(f"No data processed for business unit '{business_unit_name}', but checkpoint updated.")
 
             # Call the remap_and_save_data function
-            remap_and_save_data(related_data, business_unit, key_mapping, month_input)
+            remap_and_save_data(related_data, business_unit, key_mapping, month_name)
 
     except requests.exceptions.RequestException as e:
         print(f"Error fetching data: {e}")
