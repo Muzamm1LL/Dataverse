@@ -84,10 +84,33 @@ def fetch_business_units_and_related_data():
     # Base URL for Azure Blob Storage
     base_url = "https://tnbsl.blob.core.windows.net/qr2image/"
 
+    # Month mapping
+    month_mapping = {
+        "01": "January", "JANUARY": "01", "JAN": "01",
+        "02": "February", "FEBRUARY": "02", "FEB": "02",
+        "03": "March", "MARCH": "03", "MAR": "03",
+        "04": "April", "APRIL": "04", "APR": "04",
+        "05": "May", "MAY": "05",
+        "06": "June", "JUNE": "06", "JUN": "06",
+        "07": "July", "JULY": "07", "JUL": "07",
+        "08": "August", "AUGUST": "08", "AUG": "08",
+        "09": "September", "SEPTEMBER": "09", "SEP": "09",
+        "10": "October", "OCTOBER": "10", "OCT": "10",
+        "11": "November", "NOVEMBER": "11", "NOV": "11",
+        "12": "December", "DECEMBER": "12", "DEC": "12"
+    }
+
     # Get user input for business unit names, year, and month
     business_unit_names_input = input("Enter the business unit names (comma-separated): ").upper()  # Auto-capitalize
     year_input = input("Enter the year (e.g., 2024): ")
-    month_input = input("Enter the month (e.g., 01 for January): ")
+    month_input = input("Enter the month (e.g., March/Mar/03): ").strip().upper()
+
+    # Convert month name to numeric format
+    if month_input in month_mapping:
+        month_numeric = month_mapping[month_input]  # Keep numeric for processing
+    else:
+        print(f"Invalid month input: {month_input}. Please enter a valid month name.")
+        exit(1)  # Exit if the month is invalid
 
     # Split the input into a list of business unit names
     business_unit_names = [name.strip() for name in business_unit_names_input.split(",")]
@@ -213,8 +236,8 @@ def fetch_business_units_and_related_data():
 
                 <filter type="and">
                   <condition attribute="owningbusinessunit" operator="eq" value="{business_unit_id}" />
-                  <condition attribute="crd8d_tarikh" operator="on-or-after" value="{year_input}-{month_input}-01" />
-                  <condition attribute="crd8d_tarikh" operator="on-or-before" value="{year_input}-{month_input}-31" />
+                  <condition attribute="crd8d_tarikh" operator="on-or-after" value="{year_input}-{month_numeric}-01" />
+                  <condition attribute="crd8d_tarikh" operator="on-or-before" value="{year_input}-{month_numeric}-31" />
                 </filter>
               </entity>
             </fetch>
@@ -311,7 +334,7 @@ def fetch_business_units_and_related_data():
                 "gambar5_base64": "image5_full"
             }
 
-            def remap_and_save_data(related_data, business_unit, key_mapping):
+            def remap_and_save_data(related_data, business_unit, key_mapping, month_name):
                 """Combine business unit data with related data, remap keys, and save into JSON files."""
                 business_unit_name = business_unit.get("name", "Unknown")
                 business_unit_id = business_unit.get("businessunitid", "unknown_id")
@@ -326,7 +349,7 @@ def fetch_business_units_and_related_data():
                     print(f"No data retrieved for business unit '{business_unit_name}'. No file will be saved.")
                 else:
                     combined_data = []
-                    file_name = f"{business_unit_name}_{business_unit_negeri}_{year_input}_{month_input}.json"
+                    file_name = f"{business_unit_name}_{business_unit_negeri}_{year_input}_{month_name}.json"  # Use month name here
                     for index, row in enumerate(related_data):
                         try:
                             # Combine business unit data with related data
@@ -391,7 +414,7 @@ def fetch_business_units_and_related_data():
                     print(f"No data processed for business unit '{business_unit_name}', but checkpoint updated.")
 
             # Call the remap_and_save_data function
-            remap_and_save_data(related_data, business_unit, key_mapping)
+            remap_and_save_data(related_data, business_unit, key_mapping, month_input)
 
     except requests.exceptions.RequestException as e:
         print(f"Error fetching data: {e}")
