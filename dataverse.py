@@ -6,6 +6,7 @@ import os
 import urllib.parse
 import msal
 import base64
+import calendar
 
 # Load credentials from .env file
 load_dotenv()
@@ -190,6 +191,9 @@ def fetch_business_units_and_related_data():
 
             print(f"Processing business unit: {business_unit_name}")
 
+            # Calculate the last day of the month
+            last_day_of_month = calendar.monthrange(int(year_input), int(month_numeric))[1]
+
             # FetchXML query for qr2 table
             fetchxml_query_crd8d_qr2 = f"""
             <fetch top="5">
@@ -241,7 +245,7 @@ def fetch_business_units_and_related_data():
                 <filter type="and">
                   <condition attribute="owningbusinessunit" operator="eq" value="{business_unit_id}" />
                   <condition attribute="crd8d_tarikh" operator="on-or-after" value="{year_input}-{month_numeric}-01" />
-                  <condition attribute="crd8d_tarikh" operator="on-or-before" value="{year_input}-{month_numeric}-31" />
+                  <condition attribute="crd8d_tarikh" operator="on-or-before" value="{year_input}-{month_numeric}-{last_day_of_month}" />
                 </filter>
               </entity>
             </fetch>
