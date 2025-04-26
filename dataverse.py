@@ -1,3 +1,4 @@
+from datetime import datetime
 import time
 import requests
 import json
@@ -7,6 +8,8 @@ import urllib.parse
 import msal
 import base64
 import calendar
+from tenacity import retry, stop_after_attempt, wait_fixed
+
 
 # Load credentials from .env file
 load_dotenv()
@@ -20,9 +23,19 @@ RESOURCE_URL = os.getenv("RESOURCE_URL")
 AUTHORITY_URL = os.getenv("AUTHORITY_URL")
 
 
-# Get access token for Dataverse
-def get_access_token():
-    """Authenticate with Azure AD and get an access token for Dataverse."""
+# Global variables for token and expiry time
+access_token = None
+token_expiry_time = 0
+
+def get_access_token_with_expiry():
+    global access_token, token_expiry_time
+
+    # Check if the token is still valid
+    if access_token and time.time() < token_expiry_time:
+        print(f"Using cached access token. Token expires at: {datetime.fromtimestamp(token_expiry_time).strftime('%Y-%m-%d %H:%M:%S')}")
+        return access_token
+
+    # Acquire a new token
     dataverse_scope = [f"{RESOURCE_URL}/.default"]
     app = msal.ConfidentialClientApplication(
         CLIENT_ID,
@@ -30,12 +43,14 @@ def get_access_token():
         client_credential=CLIENT_SECRET
     )
     try:
-        # Acquire token for dataverse access
         result = app.acquire_token_for_client(scopes=dataverse_scope)
 
         if "access_token" in result:
-            print("Dataverse access token acquired successfully!")
-            return result["access_token"]
+            access_token = result["access_token"]
+            token_expiry_time = time.time() + result.get("expires_in", 3600)  # Default to 1 hour
+            expiry_time_readable = datetime.fromtimestamp(token_expiry_time).strftime('%Y-%m-%d %H:%M:%S')
+            print(f"Dataverse access token acquired successfully! Token expires at: {expiry_time_readable}")
+            return access_token
         else:
             error_description = result.get("error_description", "No error description provided.")
             print(f"Failed to acquire Dataverse token: {error_description}")
@@ -43,26 +58,39 @@ def get_access_token():
     except Exception as e:
         print(f"Dataverse: Error during authentication: {e}")
 
-def download_and_convert_to_base64(image_url):
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(5))
+def make_api_request(url, headers):
+    """Make an API request with retry logic and token refresh handling."""
+    response = requests.get(url, headers=headers)
+    if response.status_code == 401:
+        print("Access token expired. Refreshing token...")
+        headers["Authorization"] = f"Bearer {get_access_token_with_expiry()}"
+        response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    return response.json()
+
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(5))
+def download_and_convert_to_base64(image_url, row_number):
     """Download an image from the given URL and convert it to a Base64 string."""
     try:
-        print(f"Attempting to download image from: {image_url}")  # Log the URL
-        response = requests.get(image_url)
+        response = requests.get(image_url, timeout=10)
         response.raise_for_status()
-        # Convert image to Base64
         base64_image = base64.b64encode(response.content).decode("utf-8")
         print(f"Successfully downloaded and converted image: {image_url}")
-        return base64_image
+        return base64_image, None
+    except requests.exceptions.Timeout:
+        print(f"Timeout occurred while downloading image from {image_url}")
+        return None, {"image_name": image_url.split("/")[-1], "row_number": row_number}
     except requests.exceptions.RequestException as e:
         print(f"Error downloading image from {image_url}: {e}")
-        return None
+        return None, {"image_name": image_url.split("/")[-1], "row_number": row_number}
 
 
 def fetch_business_units_and_related_data():
     """Fetch business units and related data from the crd8d_qr2 table, including blob images."""
-    access_token = get_access_token()
+    
     headers = {
-        "Authorization": f"Bearer {access_token}",
+        "Authorization": f"Bearer {get_access_token_with_expiry()}",
         "Prefer": 'odata.include-annotations="OData.Community.Display.V1.FormattedValue"',
         "Content-Type": "application/json",
         "OData-MaxVersion": "4.0",
@@ -116,6 +144,33 @@ def fetch_business_units_and_related_data():
         with open(CHECKPOINT_FILE, "w", encoding="utf-8") as file:
             json.dump(processed_units, file, indent=4)
 
+    def update_checkpoint_with_failed_images(business_unit_id, business_unit_name, failed_images):
+        """Update the checkpoint file with failed image details for a specific business unit."""
+        if not failed_images:
+            return
+
+        # Load the current checkpoint
+        checkpoint_data = load_checkpoint()
+
+        # Find or create the entry for the business unit
+        business_unit_entry = next((unit for unit in checkpoint_data if unit["business_unit_id"] == business_unit_id), None)
+        if not business_unit_entry:
+            business_unit_entry = {
+                "business_unit_id": business_unit_id,
+                "business_unit_name": business_unit_name,
+                "failed_images": []
+            }
+            checkpoint_data.append(business_unit_entry)
+
+        # Append the failed images to the business unit entry
+        for failed_image in failed_images:
+            if failed_image not in business_unit_entry["failed_images"]:
+                business_unit_entry["failed_images"].append(failed_image)
+
+        # Save the updated checkpoint
+        save_checkpoint(checkpoint_data)
+        print(f"Updated checkpoint with failed images for business unit '{business_unit_name}'.")
+
 
     # Split the input into a list of business unit names
     business_unit_names = [name.strip() for name in business_unit_names_input.split(",")]
@@ -155,10 +210,7 @@ def fetch_business_units_and_related_data():
 
     try:
         # Fetch business units
-        response = requests.get(fetchxml_endpoint_business_units, headers=headers)
-        response.raise_for_status()
-        business_units = response.json().get("value", [])
-
+        business_units = make_api_request(fetchxml_endpoint_business_units, headers=headers).get("value", [])
         print(f"Total business units retrieved: {len(business_units)}")
 
         # Load the checkpoint
@@ -196,7 +248,7 @@ def fetch_business_units_and_related_data():
 
             # FetchXML query for qr2 table
             fetchxml_query_crd8d_qr2 = f"""
-            <fetch top="5">
+            <fetch top="5000">
              <entity name="crd8d_qr2">
                 <attribute name="owningbusinessunit" />
                 <attribute name="crd8d_audit" />
@@ -241,6 +293,7 @@ def fetch_business_units_and_related_data():
                 <attribute name="crd8d_gambar3_blob" />
                 <attribute name="crd8d_gambar4_blob" />
                 <attribute name="crd8d_gambar5_blob" />
+                <order attribute="crd8d_id" descending="false" />
 
                 <filter type="and">
                   <condition attribute="owningbusinessunit" operator="eq" value="{business_unit_id}" />
@@ -258,9 +311,7 @@ def fetch_business_units_and_related_data():
             fetchxml_endpoint_crd8d_qr2 = f"{DATAVERSE_URL}/api/data/v9.2/crd8d_qr2s?fetchXml={encoded_fetchxml_query_crd8d_qr2}"
 
             # Fetch related data from crd8d_qr2 table
-            response_qr2 = requests.get(fetchxml_endpoint_crd8d_qr2, headers=headers)
-            response_qr2.raise_for_status()
-            related_data = response_qr2.json().get("value", [])
+            related_data = make_api_request(fetchxml_endpoint_crd8d_qr2, headers=headers).get("value", [])
             
             if not related_data:
                 print(f"No data retrieved for business unit '{business_unit_name}'.")
@@ -268,17 +319,24 @@ def fetch_business_units_and_related_data():
                 # Log the number of rows retrieved
                 print(f"Total rows retrieved for business unit '{business_unit_name}': {len(related_data)}")
 
-            for row in related_data:
+            failed_images = []  # List to track failed image details for this business unit
+
+            for row_number, row in enumerate(related_data, start=1):
                 for i in range(1, 6):  # Loop through gambar1_blob to gambar5_blob
                     blob_attribute = f"crd8d_gambar{i}_blob"
                     if blob_attribute in row and row[blob_attribute]:
                         image_url = f"{base_url}{row[blob_attribute]}"
-                        base64_image = download_and_convert_to_base64(image_url)
+                        base64_image, failed_image_detail = download_and_convert_to_base64(image_url, row_number)
                         if base64_image:
                             # Store the Base64 string with a new key
                             row[f"gambar{i}_base64"] = base64_image
                         else:
                             print(f"Failed to process image: {image_url}")
+                            failed_images.append(failed_image_detail)
+
+            # Update the checkpoint with failed images for this business unit
+            update_checkpoint_with_failed_images(business_unit_id, business_unit_name, failed_images)
+
 
             # Define the mapping of old keys to new variable names
             key_mapping = {
